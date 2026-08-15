@@ -1,0 +1,36 @@
+:root{--bg:#0b0b0c;--card:#161618;--line:#2a2a2e;--fg:#e8e8ea;--dim:#9a9aa2;
+--ok:#4ade80;--warn:#fbbf24;--bad:#f87171;--acc:#3b82f6}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+font-family:system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.5;
+padding-bottom:40px}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);
+padding:12px 14px 0;z-index:5}
+h1{font-size:16px;margin:0 0 10px;letter-spacing:.3px}
+h2{font-size:17px;margin:0 0 6px}
+h3{font-size:15px;margin:0 0 6px}
+nav{display:flex;gap:6px;overflow-x:auto;padding-bottom:10px}
+nav button{flex:0 0 auto}
+main{padding:14px;display:flex;flex-direction:column;gap:12px}
+.card,.banner{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.sub{color:var(--dim);font-size:13px;margin:6px 0}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.banner.ok{border-color:#1f4d33}.banner.warn{border-color:#5c4310}.banner.bad{border-color:#5c1f1f}
+.blocks{margin:8px 0 0;padding-left:18px;color:var(--warn)}
+.blocks li{margin:4px 0}
+button,.btn{background:#232327;color:var(--fg);border:1px solid var(--line);
+border-radius:9px;padding:10px 14px;font-size:14px;cursor:pointer;
+display:inline-block;margin:6px 6px 0 0}
+button.sel{background:var(--acc);border-color:var(--acc);color:#fff}
+button.danger{background:#3b1414;border-color:#5c1f1f;color:var(--bad)}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+input,select{background:#0f0f11;color:var(--fg);border:1px solid var(--line);
+border-radius:9px;padding:11px;font-size:15px;width:100%;margin-top:8px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tune{display:flex;align-items:center;justify-content:space-between;gap:10px;
+font-size:13px;color:var(--dim);margin-top:8px}
+.tune input{width:96px;margin:0;text-align:right}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+th,td{text-align:left;padding:7px 4px;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-weight:500}
+ol.sub{padding-left:20px}
