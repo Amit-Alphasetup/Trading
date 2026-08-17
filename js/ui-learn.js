@@ -18,16 +18,16 @@ let lnUnit = null, lnQuiz = false, lnTab = 'units', lnReview = null;
 
 export async function learnView() {
   if (lnTab === 'drill') return lnDrillView();
-  if (lnTab === 'lnReview') return lnReviewView();
+  if (lnTab === 'review') return lnReviewView();
   if (lnUnit) return lnUnitView();
   return lnUnitsView();
 }
 
 function lnNav() {
   return `<div class="card"><div class="row">
-    <button data-act="l-lnTab" data-t="units" class="${lnTab === 'units' && !lnUnit ? 'sel' : ''}">Units</button>
-    <button data-act="l-lnTab" data-t="lnReview" class="${lnTab === 'lnReview' ? 'sel' : ''}">Review</button>
-    <button data-act="l-lnTab" data-t="drill" class="${lnTab === 'drill' ? 'sel' : ''}">Sizing drill</button>
+    <button data-act="l-tab" data-t="units" class="${lnTab === 'units' && !lnUnit ? 'sel' : ''}">Units</button>
+    <button data-act="l-tab" data-t="review" class="${lnTab === 'review' ? 'sel' : ''}">Review</button>
+    <button data-act="l-tab" data-t="drill" class="${lnTab === 'drill' ? 'sel' : ''}">Sizing drill</button>
   </div></div>`;
 }
 
@@ -93,7 +93,7 @@ async function lnUnitView() {
   }
   return `<div class="card">
     <h2>${esc(u.title)}</h2>
-    ${u.qs.map((x, i) => `<div class="qa"><p><b>${i + 1}.</b> ${esc(x.lnQ)}</p>
+    ${u.qs.map((x, i) => `<div class="qa"><p><b>${i + 1}.</b> ${esc(x.q)}</p>
       ${x.o.map((o, j) => `<label class="tune" style="justify-content:flex-start;gap:8px">
         <input type="radio" name="u${i}" value="${j}" style="width:20px;margin:0">${esc(o)}</label>`).join('')}
     </div>`).join('')}
@@ -107,10 +107,10 @@ async function lnReviewView() {
   if (!due.length) return lnNav() + `<div class="card"><h2>Nothing due</h2>
     <p class="sub">Correct answers recede to 7, then 21, then 60 days. Wrong ones come back in 3.</p></div>`;
   lnReview = (lnReview && due.find(d => d.key === lnReview.key)) ? lnReview : due[0];
-  const x = lnReview.lnQ;
+  const x = lnReview.q;
   return lnNav() + `<div class="card">
     <p class="sub">${due.length} due · from "${esc(learn.unitById(lnReview.unitId).title)}"</p>
-    <p><b>${esc(x.lnQ)}</b></p>
+    <p><b>${esc(x.q)}</b></p>
     ${x.o.map((o, j) => `<button data-act="l-rev" data-j="${j}" style="display:block;width:100%;text-align:left">${esc(o)}</button>`).join('')}
     <div id="rev-result"></div>
   </div>`;
@@ -154,7 +154,7 @@ export function learnWire() {
 export async function learnHandle(act, ev, render) {
   const D = ev.target.dataset;
 
-  if (act === 'l-lnTab') { lnTab = D.t; lnUnit = null; lnQuiz = false; return render(); }
+  if (act === 'l-tab') { lnTab = D.t; lnUnit = null; lnQuiz = false; return render(); }
   if (act === 'l-back') { lnUnit = null; lnQuiz = false; return render(); }
   if (act === 'l-open') { lnUnit = D.id; lnQuiz = false; lnTab = 'units'; return render(); }
   if (act === 'l-quiz') { await learn.markRead(lnUnit); lnQuiz = true; return render(); }
@@ -175,10 +175,10 @@ export async function learnHandle(act, ev, render) {
   }
 
   if (act === 'l-rev') {
-    const correct = +D.j === lnReview.lnQ.a;
+    const correct = +D.j === lnReview.q.a;
     await learn.answerReview(lnReview.key, correct);
-    $('rev-result').innerHTML = `<p class="${correct ? 'ok' : 'bad'}">${correct ? 'Correct.' : 'Wrong — ' + esc(lnReview.lnQ.o[lnReview.lnQ.a])}</p>
-      <p class="sub">${esc(lnReview.lnQ.why)}</p>`;
+    $('rev-result').innerHTML = `<p class="${correct ? 'ok' : 'bad'}">${correct ? 'Correct.' : 'Wrong — ' + esc(lnReview.q.o[lnReview.q.a])}</p>
+      <p class="sub">${esc(lnReview.q.why)}</p>`;
     lnReview = null;
     setTimeout(render, 1800);
     return;
