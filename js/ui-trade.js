@@ -60,7 +60,7 @@ export async function journalView() {
 
   const openList = open.length ? open.map(t => `
     <div class="card">
-      <h3>${esc(t.symbol || '')} — ${esc(t.setup)} <span class="sub">(${t.jMode})</span></h3>
+      <h3>${esc(t.symbol || '')} — ${esc(t.setup)} <span class="sub">(${t.mode})</span></h3>
       <p class="sub">${esc(t.thesis)}</p>
       <p>In ${t.entry} · Stop ${t.stop} · Target ${t.target} · Qty ${t.qty} · R:R ${t.rr}</p>
       <p class="sub">Card locked ${new Date(t.lockedAt).toLocaleString('en-IN')}</p>
