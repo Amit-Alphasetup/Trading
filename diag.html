@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnostics</title>
+<style>
+body{background:#0a0a0b;color:#ececee;font:14px/1.5 system-ui;margin:0;padding:16px}
+h1{font-size:17px;margin:0 0 4px}
+.sub{color:#94949c;font-size:12.5px;margin:0 0 16px}
+.row{padding:9px 0;border-top:1px solid #202024;display:flex;gap:10px;align-items:flex-start}
+.row:first-of-type{border-top:0}
+.n{font-family:ui-monospace,monospace;flex:1;word-break:break-all}
+.ok{color:#4ade80}.bad{color:#f87171}.warn{color:#fbbf24}
+.err{color:#f87171;font-family:ui-monospace,monospace;font-size:11.5px;
+  background:#1c1c1f;padding:10px;border-radius:8px;margin:8px 0 0;white-space:pre-wrap;word-break:break-word}
+.box{background:#141416;border:1px solid #202024;border-radius:12px;padding:14px;margin-bottom:12px}
+</style>
+</head>
+<body>
+<h1>Trading System — diagnostics</h1>
+<p class="sub">Checks each file one at a time and reports the first real error.</p>
+
+<div class="box"><h1>1. Are the files there?</h1><div id="files"></div></div>
+<div class="box"><h1>2. Do they load as modules?</h1><div id="mods"></div></div>
+<div class="box"><h1>3. Environment</h1><div id="env"></div></div>
+
+<script type="module">
+const FILES = [
+  'css/styles.css', 'manifest.json', 'icon.svg',
+  'js/store.js', 'js/rules.js', 'js/learn.js', 'js/mind.js', 'js/playbook.js',
+  'js/ledger.js', 'js/specialise.js', 'js/journal.js', 'js/analytics.js',
+  'js/replay.js', 'js/charts.js', 'js/content-equity.js', 'js/content-options.js',
+  'js/ui.js', 'js/app.js'
+];
+// Import order matters: the first failure is usually the real cause, and
+// everything after it fails only because it depends on the broken one.
+const MODULES = [
+  'js/store.js', 'js/content-equity.js', 'js/content-options.js', 'js/rules.js',
+  'js/learn.js', 'js/mind.js', 'js/playbook.js', 'js/ledger.js', 'js/specialise.js',
+  'js/journal.js', 'js/analytics.js', 'js/replay.js', 'js/charts.js', 'js/ui.js'
+];
+
+const line = (host, name, cls, mark, detail) => {
+  const d = document.createElement('div');
+  d.className = 'row';
+  d.innerHTML = `<span class="${cls}">${mark}</span><span class="n">${name}</span>`;
+  host.appendChild(d);
+  if (detail) {
+    const e = document.createElement('div');
+    e.className = 'err';
+    e.textContent = detail;
+    host.appendChild(e);
+  }
+};
+
+const filesBox = document.getElementById('files');
+let missing = 0;
+for (const f of FILES) {
+  try {
+    const res = await fetch(f + '?t=' + Date.now());
+    if (!res.ok) { line(filesBox, f, 'bad', '404', 'Not found at this path.'); missing++; continue; }
+    const text = await res.text();
+    const kb = (text.length / 1024).toFixed(1);
+    // A file that is present but suspiciously small is usually a truncated paste.
+    const thin = f.endsWith('.js') && text.length < 400;
+    line(filesBox, `${f} — ${kb} KB`, thin ? 'warn' : 'ok', thin ? '!' : 'ok',
+      thin ? 'Present but very small. Check the paste was complete.' : '');
+    if (thin) missing++;
+  } catch (e) {
+    line(filesBox, f, 'bad', 'ERR', e.message); missing++;
+  }
+}
+if (!missing) line(filesBox, 'All files present.', 'ok', 'ok', '');
+
+const modBox = document.getElementById('mods');
+let firstFail = null;
+for (const m of MODULES) {
+  try {
+    await import('./' + m + '?t=' + Date.now());
+    line(modBox, m, 'ok', 'ok', '');
+  } catch (e) {
+    const msg = (e && (e.message || String(e))) || 'unknown';
+    line(modBox, m, 'bad', 'FAIL', msg);
+    if (!firstFail) firstFail = { m, msg };
+    break;   // everything after this fails for the same reason
+  }
+}
+if (firstFail) {
+  const d = document.createElement('div');
+  d.className = 'err';
+  d.textContent = `FIRST FAILURE: ${firstFail.m}\n\n${firstFail.msg}\n\n` +
+    `Re-upload this one file. If the message mentions an unexpected end of input, ` +
+    `the paste was cut short. If it names a missing export, the file is an older version.`;
+  modBox.appendChild(d);
+} else {
+  line(modBox, 'Every module loaded. The problem is at runtime, not in loading.', 'ok', 'ok', '');
+  try {
+    const UI = await import('./js/ui.js?t=' + Date.now());
+    const names = Object.keys(UI.VIEWS || {});
+    line(modBox, `${names.length} screens found`, 'ok', 'ok', '');
+    for (const n of names) {
+      try { await UI.VIEWS[n](); line(modBox, 'screen: ' + n, 'ok', 'ok', ''); }
+      catch (e) { line(modBox, 'screen: ' + n, 'bad', 'FAIL', e.message); }
+    }
+  } catch (e) { line(modBox, 'ui.js runtime', 'bad', 'FAIL', e.message); }
+}
+
+const envBox = document.getElementById('env');
+line(envBox, 'URL: ' + location.href, 'ok', '·', '');
+try {
+  const p = await navigator.storage.persisted();
+  line(envBox, 'Storage permanent: ' + p, p ? 'ok' : 'warn', p ? 'ok' : '!',
+    p ? '' : 'Not yet granted. Add to Home screen and reopen from the icon.');
+  const est = await navigator.storage.estimate();
+  line(envBox, `Quota: ${(est.quota / 1048576).toFixed(0)} MB`, 'ok', '·', '');
+} catch (e) { line(envBox, 'storage API', 'warn', '!', e.message); }
+try {
+  const db = await new Promise((res, rej) => {
+    const r = indexedDB.open('__diag', 1);
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+  db.close(); indexedDB.deleteDatabase('__diag');
+  line(envBox, 'IndexedDB works', 'ok', 'ok', '');
+} catch (e) { line(envBox, 'IndexedDB', 'bad', 'FAIL', e.message); }
+line(envBox, 'Service workers: ' + ('serviceWorker' in navigator), 'ok', '·', '');
+</script>
+</body>
+</html>
