@@ -1,221 +1,137 @@
-// app.js — OWNS: screens and DOM. Reads through ledger/backup/schema. Never touches db directly.
+// app.js — OWNS: sections, routing, event delegation, toasts.
+// Deliberately the thinnest logic file: if this breaks, everything breaks.
 
-import * as S from './schema.js';
-import * as L from './ledger.js';
-import * as B from './backup.js';
-import * as UJ from './ui-journal.js';
-import * as db from './db.js';
+import * as store from './store.js';
+import * as ledger from './ledger.js';
+import * as learn from './learn.js';
+import * as mind from './mind.js';
+import * as UI from './ui.js';
+const { toast, confirmToast } = UI;
 
-const $ = id => document.getElementById(id);
+// Five sections rather than fifteen flat tabs. A scrolling row of fifteen
+// buttons is a list, not navigation.
+const SECTIONS = {
+  today:  { label: 'Today',  screens: [['home', 'Status'], ['start', 'Guide'], ['day', 'Market day']] },
+  learn:  { label: 'Learn',  screens: [['learn', 'Units'], ['playbook', 'Playbook'], ['backtest', 'Evidence'], ['replay', 'Replay']] },
+  trade:  { label: 'Trade',  screens: [['journal', 'Journal'], ['market', 'Regime'], ['broker', 'Reconcile']] },
+  review: { label: 'Review', screens: [['edge', 'Edge'], ['focus', 'Focus'], ['mind', 'Mind'], ['drills', 'Drills']] },
+  more:   { label: 'More',   screens: [['advanced', 'Advanced'], ['settings', 'Settings']] }
+};
+const sectionOf = route =>
+  Object.keys(SECTIONS).find(s => SECTIONS[s].screens.some(([r]) => r === route)) || 'today';
+
 const el = document.getElementById('app');
-const rs = n => '₹' + Math.round(n).toLocaleString('en-IN');
-const esc = s => String(s == null ? '' : s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
-
 let route = 'home';
+let section = 'today';
 
-// ---------------- banner: backup + storage health ----------------
-async function banner() {
-  const b = await B.status();
-  const cls = b.critical ? 'bad' : b.due ? 'warn' : 'ok';
-  const note = !b.persisted
-    ? 'This browser has NOT granted permanent storage. Back up after every trade.'
-    : '';
-  return `<div class="banner ${cls}">
-    <b>Last backup:</b> ${b.lastAt ? b.since + ' trades ago' : 'never'}
-    · storage ${b.persisted ? 'permanent' : 'EVICTABLE'} · ${b.usedMB}/${b.quotaMB} MB
-    ${note ? `<div class="sub">${note}</div>` : ''}
-    <div class="row">
-      <button data-act="backup">Back up now</button>
-      <label class="btn">Restore<input type="file" id="restoreFile" accept=".json" hidden></label>
-    </div></div>`;
-}
-
-// ---------------- home ----------------
-async function home() {
-  const p = await L.profile();
-  const ph = S.phase(p.phase);
-  const g = await L.gate();
-  const t = await L.trialStatus();
-  const proj = await L.projection();
-  const risk = await L.riskPct(p);
-  const band = S.riskBand(p.capital);
-
-  const blocks = g.blocks.length
-    ? `<ul class="blocks">${g.blocks.map(b => `<li>${esc(b.msg)}</li>`).join('')}</ul>`
-    : `<p class="ok">Live trading is open. Risk ${risk}% per trade.</p>`;
-
-  const trial = t ? `<div class="card"><h3>Trial</h3>
-    <p>Day ${t.days}/${t.days + t.daysLeft} · Trades ${t.trades}/${t.trades + t.tradesLeft}</p>
-    <p>Rule-following ${t.adherence === null ? '—' : t.adherence + '%'} (need ${t.need}%)
-       · Regressions ${t.regressions}/3</p>
-    ${t.extending ? '<p class="warn">Calendar deadline reached but trade count is short — the trial EXTENDS. It does not fail.</p>' : ''}
-    ${t.canPass ? '<p class="ok">Behaviour bar met.</p>' : ''}
-    ${t.profitRequired ? '<p class="sub">This phase also requires positive expectancy.</p>' : '<p class="sub">Profit is NOT required to pass this phase.</p>'}
-    </div>` : '';
-
-  return `${await banner()}
-  <div class="card">
-    <h2>Phase ${ph.id} — ${ph.name}</h2>
-    <p class="sub">${ph.blurb}</p>
-    <p>Stage: <b>${p.stage}</b> · Capital ${rs(p.capital)} · Ceiling ${band.ceiling}% (daily cap ${band.dailyCap}%)</p>
-    ${blocks}
-  </div>
-  ${trial}
-  <div class="card"><h3>How long will this take?</h3><p class="sub">${esc(proj.text)}</p></div>
-  <div class="card"><h3>What this will not do</h3>
-    <ol class="sub">
-      <li>It will not prevent losses.</li>
-      <li>It cannot say how long this takes.</li>
-      <li>It cannot certify psychological readiness.</li>
-      <li>It cannot prove your journal is sincere — only that it was written first.</li>
-      <li>Most people attempting this fail. This improves odds; it promises nothing.</li>
-    </ol></div>`;
-}
-
-// ---------------- backtest (manual mode) ----------------
-async function backtest() {
-  const ev = await L.patternEvidence();
-  const r = await S.rules();
-  const rows = await db.all('backtests');
-  const names = [...new Set([...S.SETUPS.swing, ...S.SETUPS.intraday, ...Object.keys(ev)])];
-
-  const table = Object.keys(ev).length ? `<table>
-    <tr><th>Pattern</th><th>n</th><th>Win%</th><th>Expectancy</th><th>Unlocks</th></tr>
-    ${Object.entries(ev).map(([k, m]) => `<tr>
-      <td>${esc(k)}</td><td>${m.n}</td>
-      <td>${m.trustworthy ? m.winRate + '%' : '—'}</td>
-      <td>${m.trustworthy ? m.expectancy.toFixed(2) + 'R' : `<span class="sub">insufficient data (${r.btTrust} needed)</span>`}</td>
-      <td>${m.liveOK ? '<span class="ok">live</span>' : m.paperOK ? 'paper' : `${r.btPaper - m.n} more to paper`}</td>
-    </tr>`).join('')}</table>` : '<p class="sub">No examples marked yet.</p>';
-
-  return `<div class="card"><h2>Backtest — manual mode</h2>
-    <p class="sub">Mark examples from any charting app. ${r.btPaper} unlocks paper, ${r.btLive} unlocks live,
-    ${r.btTrust} before a number is trusted. You may only trade what you personally proved.</p>
-    <select id="bt-pattern">${names.map(n => `<option>${esc(n)}</option>`).join('')}</select>
-    <div class="grid">
-      <input id="bt-entry" type="number" inputmode="decimal" placeholder="Entry">
-      <input id="bt-stop" type="number" inputmode="decimal" placeholder="Stop">
-      <input id="bt-exit" type="number" inputmode="decimal" placeholder="Exit">
-      <input id="bt-date" type="date">
-    </div>
-    <button data-act="bt-add">Add example</button>
-    <p id="bt-msg" class="sub"></p>
-  </div>
-  <div class="card"><h3>Your measured evidence</h3>${table}
-    <p class="sub">${rows.length} examples marked in total.</p></div>`;
-}
-
-// ---------------- settings ----------------
-async function settings() {
-  const p = await L.profile();
-  const r = await S.rules();
-  const tune = ['adherencePass', 'regressionFloor', 'drawdownTrigger', 'regressionLock',
-    'btPaper', 'btLive', 'btTrust', 'trialRiskPct', 'backupEveryNTrades'];
-
-  return `<div class="card"><h2>Capital</h2>
-    <input id="cap" type="number" inputmode="numeric" value="${p.capital}" placeholder="Total trading capital ₹">
-    <button data-act="save-cap">Save</button>
-    <p class="sub">Declaring capital never unlocks a skill level. It can only remove a money block.</p>
-  </div>
-  <div class="card"><h2>Whose money is it?</h2>
-    <p class="sub">Is any of this capital borrowed, from family, or already committed to something else?</p>
-    <div class="row">
-      <button data-act="clean-yes" class="${p.capitalIsClean === true ? 'sel' : ''}">All mine, uncommitted</button>
-      <button data-act="clean-no" class="${p.capitalIsClean === false ? 'sel' : ''}">Some is borrowed/committed</button>
-    </div>
-    <p class="sub">Answered again every 90 days. "Borrowed" is a hard block, not a warning.</p>
-  </div>
-  <div class="card"><h2>Wind-down</h2>
-    <p class="sub">Job change, illness, family emergency. Freezes every gate with no penalty. Nothing decays.</p>
-    <button data-act="${p.stage === 'paused' ? 'resume' : 'pause'}">${p.stage === 'paused' ? 'Resume' : 'Pause everything'}</button>
-  </div>
-  <div class="card"><h2>Tunable rules</h2>
-    <p class="sub">Every number below is judgment, not a finding. None is validated. Tune them.</p>
-    ${tune.map(k => `<label class="tune">${k}
-      <input data-rule="${k}" type="number" step="0.5" value="${r[k]}"></label>`).join('')}
-    <button data-act="save-rules">Save rules</button>
-  </div>
-  <div class="card"><h2>Danger</h2>
-    <button data-act="wipe" class="danger">Erase everything</button></div>`;
-}
-
-// ---------------- render + events ----------------
-const VIEWS = { home, journal: UJ.view, backtest, settings };
+// ---------- render ----------
 async function render() {
-  el.innerHTML = '<p class="sub">Loading…</p>';
-  try { el.innerHTML = await VIEWS[route](); }
-  catch (e) { el.innerHTML = `<div class="card bad">Error: ${esc(e.message)}</div>`; }
-  if (route === 'journal') UJ.wire(render);
-  document.querySelectorAll('nav button').forEach(b =>
-    b.classList.toggle('sel', b.dataset.go === route));
-  const f = $('restoreFile');
-  if (f) f.onchange = async () => {
+  el.innerHTML = '<div class="skeleton"><div class="sk-card"></div><div class="sk-card"></div></div>';
+  section = sectionOf(route);
+
+  document.getElementById('tbTitle').textContent =
+    (SECTIONS[section].screens.find(([r]) => r === route) || [, SECTIONS[section].label])[1];
+  document.getElementById('tbSub').textContent = await subtitle();
+
+  // Sub-navigation only when the section holds more than one screen.
+  const sub = document.getElementById('subnav');
+  const scr = SECTIONS[section].screens;
+  sub.innerHTML = scr.length > 1 ? scr.map(([r, l]) =>
+    `<button data-go="${r}" class="${r === route ? 'sel' : ''}">${l}</button>`).join('') : '';
+  sub.style.display = scr.length > 1 ? '' : 'none';
+
+  document.querySelectorAll('.tabbar button').forEach(b =>
+    b.classList.toggle('sel', b.dataset.section === section));
+
+  try {
+    el.innerHTML = await UI.VIEWS[route]();
+  } catch (e) {
+    el.innerHTML = `<div class="card"><h2 class="bad">This screen failed to load</h2>
+      <p class="sub">${UI.esc(e.message)}</p>
+      <p class="faint">Your data is not affected. Other screens should still work.</p></div>`;
+    console.error(route, e);
+  }
+  window.scrollTo(0, 0);
+  const w = UI.WIRE[route];
+  if (w) w(render);
+  wireRestore();
+  await markBadges();
+}
+
+// One glanceable line under the title: where you are, and what state you are in.
+async function subtitle() {
+  try {
+    const p = await ledger.profile();
+    const ph = `Phase ${p.phase}`;
+    const st = { learning: 'learning', paper: 'paper trading', live: 'live',
+      locked: 'locked — regression', cooldown: 'cooldown', paused: 'paused' }[p.stage] || p.stage;
+    return `${ph} · ${st}`;
+  } catch { return ''; }
+}
+
+// A dot on a tab means something there needs attention. Nothing else does.
+async function markBadges() {
+  try {
+    const acts = await UI.nextActions();
+    const urgent = new Set(acts.filter(a => a.urgent).map(a => sectionOf(a.tab)));
+    document.querySelectorAll('.tabbar button').forEach(b => {
+      const has = urgent.has(b.dataset.section);
+      const old = b.querySelector('.badge');
+      if (has && !old) { const d = document.createElement('span'); d.className = 'badge'; b.appendChild(d); }
+      if (!has && old) old.remove();
+    });
+  } catch { /* badges are cosmetic; never let them break a render */ }
+}
+
+function wireRestore() {
+  const f = document.getElementById('restoreFile');
+  if (!f) return;
+  f.onchange = async () => {
     if (!f.files[0]) return;
-    if (!confirm('This REPLACES all current data. Continue?')) return;
-    try { await B.restore(f.files[0]); alert('Restored.'); render(); }
-    catch (e) { alert('Restore failed: ' + e.message); }
+    if (!await confirmToast('This REPLACES all current data with the backup file.', 'Replace everything')) return;
+    try { await store.restore(f.files[0]); toast('Restored.', 'ok'); render(); }
+    catch (e) { toast('Restore failed: ' + e.message, 'bad'); }
   };
 }
 
+// ---------- events ----------
 document.addEventListener('click', async ev => {
-  const go = ev.target.dataset && ev.target.dataset.go;
-  if (go) { route = go; return render(); }
-  const act = ev.target.dataset && ev.target.dataset.act;
+  const btn = ev.target.closest('button, .btn');
+  const t = btn || ev.target;
+  const d = t.dataset || {};
+
+  if (d.section) {
+    const first = SECTIONS[d.section].screens[0][0];
+    route = first;
+    return render();
+  }
+  if (d.go && UI.VIEWS[d.go]) { route = d.go; return render(); }
+
+  const act = d.act;
   if (!act) return;
-  if (act.startsWith('j-')) return UJ.handle(act, ev, render);
-  const p = await L.profile();
-
-  if (act === 'backup') { await B.download(); return render(); }
-
-  if (act === 'save-cap') {
-    p.capital = Math.max(0, +$('cap').value || 0);
-    p.peakEquity = Math.max(p.peakEquity || 0, p.capital);
-    await L.saveProfile(p); return render();
+  for (const [prefix, fn] of UI.HANDLERS) {
+    if (act.startsWith(prefix)) return fn(act, ev, render);
   }
-  if (act === 'clean-yes' || act === 'clean-no') {
-    p.capitalIsClean = act === 'clean-yes';
-    p.capitalAskedOn = new Date().toISOString();
-    await L.saveProfile(p); return render();
-  }
-  if (act === 'pause') { await L.pause(); return render(); }
-  if (act === 'resume') { await L.resume(); return render(); }
-
-  if (act === 'save-rules') {
-    for (const i of document.querySelectorAll('[data-rule]')) {
-      await S.setRule(i.dataset.rule, +i.value);
-    }
-    return render();
-  }
-
-  if (act === 'bt-add') {
-    const entry = +$('bt-entry').value, stop = +$('bt-stop').value, exit = +$('bt-exit').value;
-    const msg = $('bt-msg');
-    if (!entry || !stop || !exit) { msg.textContent = 'Entry, stop and exit are all required.'; return; }
-    const risk = Math.abs(entry - stop);
-    if (!risk) { msg.textContent = 'Stop cannot equal entry.'; return; }
-    const dir = stop < entry ? 1 : -1;
-    await db.add('backtests', {
-      pattern: $('bt-pattern').value, entry, stop, exit,
-      rMultiple: +(((exit - entry) * dir) / risk).toFixed(2),
-      date: $('bt-date').value || null, at: new Date().toISOString()
-    });
-    return render();
-  }
-
-  if (act === 'wipe') {
-    if (!confirm('Erase every trade, backtest and setting. Back up first. Continue?')) return;
-    for (const s of db.STORES) await db.clear(s);
-    return render();
-  }
+  return UI.statusHandle(act, ev, render);
 });
 
-// quarterly re-ask of the capital-source question (G5)
+// ---------- boot ----------
+// A silently-updated service worker means the person can be running old gate
+// logic without knowing. Tell them, and let them choose the moment.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (window.__tcsReloading) return;
+    toast('A new version is ready. Reload when you are not mid-trade.');
+  });
+}
+
 (async () => {
-  const p = await L.profile();
-  if (p.capitalAskedOn && Date.now() - new Date(p.capitalAskedOn).getTime() > 90 * 86400000) {
-    p.capitalIsClean = null;
-    await L.saveProfile(p);
-  }
-  await L.checkRegression();
-  render();
+  await store.migrate();
+  const decayed = await learn.applyDecay();
+  const st = await mind.todayState();
+  await ledger.tickTrialDay({ blocked: !!(st && st.blocked) });
+  await ledger.checkRegression();
+  if (!(await UI.onboardSeen())) route = 'start';
+  await render();
+  if (decayed) toast(`${decayed} unit(s) went stale — reviews unanswered for ${learn.STALE_DAYS}+ days. Their patterns are locked again.`, 'warn');
 })();
